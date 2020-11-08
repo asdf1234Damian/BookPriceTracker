@@ -131,6 +131,7 @@ dmypy.json
 #Visual Code 
 
 #Cache
-./priceData.csv
-./lastExec.txt
-./todaysPlot.png
+priceData.csv
+lastExec.txt
+todaysPlot.png
+.vscode/

@@ -1,174 +1,236 @@
-#Normalization for viz
+# Terminal colors and functions
+from colorama import Fore
+import msvcrt
+# Normalization for viz
 from sklearn.preprocessing import MinMaxScaler
-#Viz
+# Viz
 import matplotlib.pyplot as plt
-#Data wrangling
+# Data wrangling
 from collections import Counter
+from math import isnan
 import pandas as pd
 import numpy as np
-#Data scraping
+# Data scraping
 import requests
 import bs4
-#Miscelaneeus
-from datetime import date
+# Sys miscelaneeus
 from os import system
 import sys
+#Date and time
+from datetime import date
+import datetime
 import time
 
 
-#Requests headers 
-hdrs = {"User agent": "Mozilla/5.0 (Windows NT 10.0Win64x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/80.0.3987.149 Safari/537.36"}
+# Requests headers
+hdrs = {
+    "User agent": "Mozilla/5.0 (Windows NT 10.0Win64x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/80.0.3987.149 Safari/537.36"}
 idDict = {
     'tab': 'my-lists-tab',
     'items': 'g-items',
     'load_more': 'sort-by-price-load-more-items-url',
     'end': 'endOfListMarker'}
 
-#Miscelaneos    
-loading = ['/','|','\\']
+# Miscelaneos
+loading = ['/', '|', '\\']
 today = date.today()
 
-#Domains
+# Domains
 ZARAURL = 'https://www.zara.com/mx/'
 AMAZONURL = 'https://www.amazon.com.mx'
 
-#Amazon whishlist
+# Amazon whishlist
 whishlists = {
-    'coffe':'/hz/wishlist/ls/104R27JSNG9CF?ref_=wl_share',
-    'books':'/hz/wishlist/ls/EB767EYMKQE5?ref_=wl_share'
+    'coffee': '/hz/wishlist/ls/104R27JSNG9CF?ref_=wl_share',
+    'books': '/hz/wishlist/ls/EB767EYMKQE5?ref_=wl_share',
+    'blenders': '/hz/wishlist/ls/3UKQOJ9HIMD7M?ref_=wl_share',
+    'baking': '/hz/wishlist/ls/3UKQOJ9HIMD7M?ref_=wl_share',
+    'vacuum': '/hz/wishlist/ls/3UKQOJ9HIMD7M?ref_=wl_share'
 }
 
+
 def executedToday():
+    return False
     global today
-    lastExec = open('C:/Users/asdf1/Documents/BookPriceTracker/lastExec.txt', 'rt')
+    lastExec = open(
+        'C:/Users/asdf1/Documents/BookPriceTracker/lastExec.txt', 'rt')
     if(lastExec.read() == str(today)):
         return True
     lastExec.close()
-    lastExec = open('C:/Users/asdf1/Documents/BookPriceTracker/lastExec.txt', 'wt')
-    lastExec.write(today)
+    lastExec = open(
+        'C:/Users/asdf1/Documents/BookPriceTracker/lastExec.txt', 'wt')
+    lastExec.write(str(today))
     return False
 
 
-def chckConnection():
+def waitConnection():
     l = 0
     while(True):
         try:
-            requests.get(AMAZONURL,headers = hdrs,timeout=.2)
+            requests.get(AMAZONURL, headers=hdrs, timeout=.2)
         except:
-            print(f' 接続待ち ... {loading[l]}',end = '\r')
-            l = (l+1)%3
+            print(f' 接続待ち ... {loading[l]}', end='\r')
+            l = (l+1) % 3
             time.sleep(1)
             continue
         break
+    return
 
-def retrieveAmazonData(wl_url,path):
+
+def menuPrint(options, prompt):
+    menu = options
+    print(prompt)
+    while(True):
+        print(f' {menu[0]}', end='\r')
+        k = ord(msvcrt.getch())
+        if k == 13 or k == 3 or k == 27:
+            print('')
+            return menu[0]
+        elif k == 80:  # Down
+            menu = menu[1:]+[menu[0]]
+        elif k == 72:  # Up
+            menu = [menu[-1]]+menu[:-1]
+
+
+def updateData(data, path, delta=30):
+    df = pd.read_csv(path, index_col='title')
+    start_date = datetime.datetime.now() - datetime.timedelta(delta)
+    # Drop oldest column
+    if len(df.columns) > 30:
+        df = df[df.columns[1:]]
+    for title, price in data.items():
+        df.loc[title, str(today)] = price
+    df.to_csv(path)
+
+
+def retrieveAmazonData(wl_url, path, delta=60):
     global AMAZONURL
-    data = []
+    global today
+    data = {}
     currBlock = wl_url
     finished = False
     i = 0
     while(not finished):
-        #Retrieve wishlist
+        # Retrieve wishlist
         try:
-            page = requests.get(AMAZONURL+currBlock,headers = hdrs)
+            page = requests.get(AMAZONURL+currBlock, headers=hdrs)
         except requests.ConnectionError:
             print('Could not connect. Try again when connected')
             sys.exit()
-        ##Parse and scrap data
-        soup = bs4.BeautifulSoup(page.content,'html.parser')
+        # Parse and scrap data
+        soup = bs4.BeautifulSoup(page.content, 'html.parser')
         whishlist = soup.find(id=idDict['items'])
+
         for child in whishlist.find_all("li"):
-            priceData = child.find('span',{"class":"a-offscreen"})
+            priceData = child.find('span', {"class": "a-offscreen"})
             if priceData != None:
-                data.append([today,child.find('h3').find('a')['title'],priceData.contents[0][1:].replace(',','')]) 
-                i+=1
-        ##Check for end of list
-        if(soup.find(id = idDict['end'])):
+                title = child.find('h3').find('a')['title']
+                price = priceData.contents[0][1:].replace(',', '')
+                data[title] = price
+                i += 1
+        # Check for end of list
+        if(soup.find(id=idDict['end'])):
             finished = True
             break
         else:
-            currBlock = soup.find(id = idDict['load_more'])['value']
-    #Save data
-    todaysDf = pd.DataFrame(data = data, columns=['date','title','price'])
-    todaysDf.to_csv(path,header=False, mode='a', index=False)
+            currBlock = soup.find(id=idDict['load_more'])['value']
+    # Save data
+    updateData(data, path, delta)
     return i
 
-def pltData(path,save=False):
-    df = pd.read_csv(path)
+
+def dataInfo(path, save=False):
+    prcsDWN = 0
+    prcsUP = 0
+    prcsEQ = 0
+    mean = 0
+    # Setting the plot props
+    df = pd.read_csv(path, index_col='title')
     fig = plt.figure(figsize=(20, 10))
-    plt.ylim((0, 1000))
-    plt.yticks(range(0, 1000, 100))
+    plt.ylim((0, 1200))
+    plt.yticks(range(0, 1200, 50))
     plt.grid(True)
+    # Data about the data (is this meta ?)
+    dates = [x[5:] for x in df.columns]
+    for title, prices in df.iterrows():
+        lbl, linStyle = '', ''
+        # Check if available again
+        if not isnan(prices[-1]):
+            if isnan(prices[-2]):
+                print(f"\t{title} 購入可能! {prices[-1]}")
+            # Calculate change in price
+            else:
+                priceDelta = prices[-2] - prices[-1]
+                if priceDelta != 0:
+                    print('\t', end='')
+                    if priceDelta > 0:
+                        print(f"{Fore.GREEN}", end='')
+                    else:
+                        print(f"{Fore.RED}", end='')
+                lbl = (('▲' if (priceDelta < 0) else '▼ ') +
+                       '{:.2f}'.format(priceDelta))
+                lbl = f'{title[:15].ljust(16)}... : ${prices[-1]} {lbl.rjust(8)}'
+                if priceDelta != 0:
+                    mean = np.mean(prices)
+                    extra_info = ''
+                    if prices[-1] < mean:
+                        extra_info = f"\t(BELOW MEAN by {'{:.2f}'.format(mean - prices[-1])})"
+                    print(f"{lbl}{extra_info}{Fore.RESET}")
 
-    titlesMap = {title: [[], []] for title in df['title'].unique()}
-    for row in df.iterrows():
-        title = row[1]['title']
-        titlesMap[title][0].append(row[1]['price'])
-        titlesMap[title][1].append(row[1]['date'])
-
-    mostChange = Counter()
-    for key, val in titlesMap.items():
-        priceDelta = titlesMap[key][0][-2] - titlesMap[key][0][-1] if len(titlesMap[key][0]) > 2 else 0
-        if priceDelta != 0:
-            mostChange[key] = priceDelta
-
-    deltas = [delta for title, delta in mostChange.most_common(30)]
-    deltas = np.array(deltas).reshape(-1, 1)
-    scaler = MinMaxScaler((0, 1))
-    deltas = scaler.fit_transform(deltas)
-    deltas = [x[0] if x[0] < 1 else 1 for x in deltas]
-    i = 0
-    dateSet = set()
-    for item in mostChange.most_common(30):
-        title = item[0]
-        prices = titlesMap[title][0]
-        dates = titlesMap[title][1]
-        dates = [x[5:] for x in dates]
-        priceDelta = (prices[-1] - prices[-2]) if len(prices) > 2 else 0
-        dev = 10 * np.std(prices)/np.mean(prices)
-        dev = 1 if dev > 1 else dev
-        label = (('▲' if (priceDelta > 0) else '▼ ') + '{:.2f}'.format(priceDelta))
-        label = f'{title[:15].ljust(16)}... : ${prices[-1]} {label.rjust(8)}'
-        plt.plot(dates, prices, linestyle='-',alpha=min(1,deltas[i]+.3), marker='o', label=label)
-        dateSet.update(dates)
-        i += 1
-    dateSet = list(dateSet)
-    plt.xticks(dateSet,rotation='vertical')
+                if priceDelta != 0:
+                    if priceDelta > 0:
+                        linStyle = '-'
+                        prcsDWN += 1
+                    else:
+                        linStyle = ':'
+                        prcsUP += 1
+                    plt.plot(dates, prices, label=lbl, linestyle='-')
+                else:
+                    prcsEQ += 1
+    if prcsUP == 0 and prcsDWN == 0:
+        print('\tNo changes, no plot :c')
+        return
     leg = plt.legend(loc='lower center', mode='expand',
-                    ncol=3, shadow=True, fancybox=True)
+                     ncol=3, shadow=True, fancybox=True)
     leg.get_frame().set_alpha(0.5)
-    plt.show()
+    plt.xticks(dates, rotation='vertical')
+    if menuPrint(['はい！', 'いええ'], 'プロットを描く?') == 'はい！':
+        print('描いている...')
+        plt.show()
     if save:
+        pass
         fig.savefig(
             'C:/Users/asdf1/Documents/BookPriceTracker/todaysPlot.png', transparent=True)
 
 
 system('cls')
-print(f"今日は {today.year}年{today.month}月{today.day}日 です！\n")
-###Only once a day
-if executedToday():
-    print('行われた!')
-else:
-    ###Check for connection
-    chckConnection()
-    ### Start scrapping
+print(f"今日は {today.year}年{today.month}月{today.day}日 です！")
+# Only once a day
+if not executedToday():
+    # Check for connection
+    waitConnection()
+    # Start scrapping
     print(f"Amazon を 待っている　\n")
-    newBooks = retrieveAmazonData(whishlists['books'],'C:/Users/asdf1/Documents/BookPriceTracker/books.csv')
+    for wl in whishlists:
+        print
+    newBooks = retrieveAmazonData(
+        whishlists['books'], 'C:/Users/asdf1/Documents/BookPriceTracker/books.csv')
     print(f'{newBooks} 新しい本の価格！')
-    print(f"ZARA を 待っている　\n")
-    
-
-if 'y' == input('Would you like to plot the data?'):
-    pltData('C:/Users/asdf1/Documents/BookPriceTracker/books.csv',True)
-
-
-for i in range(1,4):
-    print(f' さよなら{"!"*i}',end='\r')
-    time.sleep(1.5)
-sys.exit(0)
-
-
-
-
-
-
+    # coffeeItems = retrieveAmazonData(
+    #     whishlists['coffee'], 'C:/Users/asdf1/Documents/BookPriceTracker/coffee.csv')
+    # print(f'{coffeeItems} 新しいコーヒーの価格！')
+    homeItems = retrieveAmazonData(
+        whishlists['vacuum'], 'C:/Users/asdf1/Documents/BookPriceTracker/home.csv', 180)
+    print(f'{homeItems} 新しいコーヒーの価格！')
+# Analytics
+print(f'{Fore.CYAN}本の価格{Fore.RESET}')
+dataInfo('C:/Users/asdf1/Documents/BookPriceTracker/books.csv', False)
+print(f'{Fore.CYAN}コーヒーの価格{Fore.RESET}')
+dataInfo('C:/Users/asdf1/Documents/BookPriceTracker/coffee.csv', False)
+print(f'{Fore.CYAN}家の価格{Fore.RESET}')
+dataInfo('C:/Users/asdf1/Documents/BookPriceTracker/home.csv', False)
+# Good Bye
+print('行われた!')
+for i in range(1, 4):
+    print(f' さよなら{"!"*i}', end='\r')
+    time.sleep(.5)
